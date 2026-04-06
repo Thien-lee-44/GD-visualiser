@@ -34,7 +34,6 @@ void main() {
     
     vec3 surfaceColor = (t < 0.5) ? mix(low_c, mid_c, t * 2.0) : mix(mid_c, high_c, (t - 0.5) * 2.0);
     
-    // Tự động làm tối mặt sau của đồ thị nếu không phải bản đồ phẳng
     if (!gl_FrontFacing && flattenY > 0.5 && is_contour == 0) surfaceColor *= 0.65; 
 
     if (is_contour == 1) FragColor = vec4(clamp(surfaceColor * line_brightness, 0.0, 1.0), 1.0);
