@@ -1,0 +1,18 @@
+{
+  "window": {
+    "title": "Optimizer Visualizer Pro",
+    "width": 1800,
+    "height": 1000,
+    "msaa_samples": 8
+  },
+  "paths": {
+    "shaders": "assets/shaders",
+    "models": "assets/models",
+    "textures": "assets/textures",
+    "schema": "configs/optimizer_schema.json"
+  },
+  "simulation": {
+    "default_speed": 80,
+    "default_max_epochs": 1000
+  }
+}
