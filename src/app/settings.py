@@ -3,8 +3,10 @@ Application settings management.
 Provides a robust, type-safe way to load and access JSON configurations.
 """
 import json
-import os
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+PathLike = Union[str, Path]
 
 class AppSettings:
     """Configuration manager handling application settings and schemas."""
@@ -12,18 +14,20 @@ class AppSettings:
     def __init__(self) -> None:
         self._config: Dict[str, Any] = {}
         self._schema: Dict[str, Any] = {}
+        self._project_root = Path(__file__).resolve().parents[2]
 
-    def load_configs(self, app_settings_path: str = "configs/app_settings.json") -> None:
+    def load_configs(self, app_settings_path: Optional[PathLike] = None) -> None:
         """Loads core application settings and the optimizer schema from JSON files."""
-        if os.path.exists(app_settings_path):
-            with open(app_settings_path, 'r', encoding='utf-8') as f:
+        config_path = self._resolve_path(app_settings_path or Path("configs") / "app_settings.json")
+        if config_path.exists():
+            with config_path.open("r", encoding="utf-8") as f:
                 self._config = json.load(f)
         else:
-            raise FileNotFoundError(f"Missing core configuration file: {app_settings_path}")
+            raise FileNotFoundError(f"Missing core configuration file: {config_path}")
 
-        schema_path = self.get("paths", "schema", default="configs/optimizer_schema.json")
-        if os.path.exists(schema_path):
-            with open(schema_path, 'r', encoding='utf-8') as f:
+        schema_path = self.get_path("paths", "schema", default=Path("configs") / "optimizer_schema.json")
+        if schema_path.exists():
+            with schema_path.open("r", encoding="utf-8") as f:
                 self._schema = json.load(f)
         else:
             self._schema = {}
@@ -37,6 +41,18 @@ class AppSettings:
             else:
                 return default
         return val
+
+    def get_path(self, *keys: str, default: PathLike) -> Path:
+        """Resolves a configured path relative to the project root when needed."""
+        raw_path = self.get(*keys, default=default)
+        return self._resolve_path(raw_path)
+
+    def _resolve_path(self, path_value: PathLike) -> Path:
+        """Converts a path value into an absolute normalized path."""
+        candidate = Path(path_value)
+        if not candidate.is_absolute():
+            candidate = self._project_root / candidate
+        return candidate.resolve()
 
     @property
     def schema(self) -> Dict[str, Any]:

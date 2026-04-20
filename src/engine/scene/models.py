@@ -2,8 +2,8 @@
 Defines mathematical and geometric entities for the 3D scene.
 All models strictly inherit from the core BufferObject and fetch raw data via ResourceManager.
 """
-import os
 import math
+from pathlib import Path
 import numpy as np
 from OpenGL.GL import *
 from typing import List, Any, Optional
@@ -69,25 +69,25 @@ class FootballMesh(TexturedMeshObj):
     """High-poly textured football model for 3D optimizer representation."""
     
     def __init__(self) -> None:
-        models_dir = settings.get("paths", "models", default="assets/models")
-        textures_dir = settings.get("paths", "textures", default="assets/textures")
-        obj_path = os.path.join(models_dir, "sphere_latlong.obj")
-        tex_path = os.path.join(textures_dir, "football-diffuse.png")
-        super().__init__(obj_path, tex_path, original_radius=0.5)
+        models_dir = settings.get_path("paths", "models", default=Path("assets") / "models")
+        textures_dir = settings.get_path("paths", "textures", default=Path("assets") / "textures")
+        obj_path = models_dir / "sphere_latlong.obj"
+        tex_path = textures_dir / "football-diffuse.png"
+        super().__init__(str(obj_path), str(tex_path), original_radius=0.5)
 
 class CylinderMesh(TexturedMeshObj):
     """High-poly cylinder model for arrows, loaded via OBJ data cache."""
     
     def __init__(self) -> None:
-        models_dir = settings.get("paths", "models", default="assets/models")
-        super().__init__(os.path.join(models_dir, "cylinder.obj"))
+        models_dir = settings.get_path("paths", "models", default=Path("assets") / "models")
+        super().__init__(str(models_dir / "cylinder.obj"))
 
 class ConeMesh(TexturedMeshObj):
     """High-poly cone model for arrows, loaded via OBJ data cache."""
     
     def __init__(self) -> None:
-        models_dir = settings.get("paths", "models", default="assets/models")
-        super().__init__(os.path.join(models_dir, "cone.obj"))
+        models_dir = settings.get_path("paths", "models", default=Path("assets") / "models")
+        super().__init__(str(models_dir / "cone.obj"))
 
 class WireframeSphere(BufferObject):
     """A minimal wireframe sphere calculated via trigonometry for a cleaner visual."""

@@ -13,6 +13,10 @@ from src.utils.caching import surface_cache
 
 class MathSurface:
     """Represents a 3D landscape generated from a mathematical objective function."""
+    _SPHERE_RADIAL_SAMPLES = np.linspace(0.0, 1.05, 15, dtype=np.float64)
+    _SPHERE_ANGLE_SAMPLES = np.linspace(0.0, 2.0 * math.pi, 36, endpoint=False, dtype=np.float64)
+    _SPHERE_COS = np.cos(_SPHERE_ANGLE_SAMPLES)
+    _SPHERE_SIN = np.sin(_SPHERE_ANGLE_SAMPLES)
     
     def __init__(self, loss_function: Any, x_range: Tuple[float, float], y_range: Tuple[float, float], 
                  steps: int, height_scale: float = 1.0, use_log: bool = False, contour_levels: int = 20) -> None:
@@ -48,11 +52,54 @@ class MathSurface:
         self.use_log = use_log
         self.height_scale = height_scale
         self.contour_levels = contour_levels
+        self._vectorized_loss_supported = None
+        self._vectorized_grad_supported = None
         
         self.min_grad_norm = 0.0
         self.max_grad_norm = 0.0
         
         self._generate_buffers(x_range, y_range, steps)
+
+    def _compute_value_array(self, x_vals: Any, z_vals: Any) -> np.ndarray:
+        """Evaluate loss values on scalar/vector inputs with fast vectorized fallback."""
+        x_arr = np.asarray(x_vals, dtype=np.float64)
+        z_arr = np.asarray(z_vals, dtype=np.float64)
+        if x_arr.shape != z_arr.shape:
+            raise ValueError("x and z inputs must share the same shape.")
+
+        if self._vectorized_loss_supported is not False:
+            try:
+                values = np.asarray(self.loss_function.compute_value((x_arr, z_arr)), dtype=np.float64)
+                if values.shape == x_arr.shape:
+                    self._vectorized_loss_supported = True
+                    return values
+            except Exception:
+                self._vectorized_loss_supported = False
+
+        flat_vals = np.fromiter(
+            (self.loss_function.compute_value([float(px), float(pz)]) for px, pz in zip(x_arr.ravel(), z_arr.ravel())),
+            dtype=np.float64,
+            count=x_arr.size,
+        )
+        return flat_vals.reshape(x_arr.shape)
+
+    def _compute_gradient_norm_grid(self, X: np.ndarray, Z: np.ndarray) -> np.ndarray:
+        """Compute gradient norm over the mesh grid with vectorized fast-path."""
+        if self._vectorized_grad_supported is not False:
+            try:
+                grad = np.asarray(self.loss_function.compute_gradient((X, Z)), dtype=np.float64)
+                if grad.ndim >= 3 and grad.shape[0] == 2 and grad.shape[1:] == X.shape:
+                    self._vectorized_grad_supported = True
+                    return np.hypot(grad[0], grad[1])
+            except Exception:
+                self._vectorized_grad_supported = False
+
+        grad_norms = np.zeros(X.shape, dtype=np.float64)
+        for i in range(X.shape[0]):
+            for j in range(X.shape[1]):
+                g = self.loss_function.compute_gradient([X[i, j], Z[i, j]])
+                grad_norms[i, j] = math.hypot(float(g[0]), float(g[1]))
+        return grad_norms
 
     def _generate_buffers(self, x_range: Tuple[float, float], y_range: Tuple[float, float], steps: int) -> None:
         """Computes mesh vertices, indices, gradients, and contour lines with caching support."""
@@ -75,8 +122,46 @@ class MathSurface:
         cached_data = surface_cache.get_surface_data(shape_key)
         
         if cached_data is not None:
-            (X, Z, Y_visual, mapped_norms, raw_min, raw_max, processed_min, auto_height_scale, 
-             base_lines_3d, lines_2d, contour_labels, norm_min, norm_max) = cached_data
+            if len(cached_data) == 14:
+                (
+                    X,
+                    Z,
+                    Y_visual,
+                    mapped_norms,
+                    raw_t_norm,
+                    raw_min,
+                    raw_max,
+                    processed_min,
+                    auto_height_scale,
+                    base_lines_3d,
+                    lines_2d,
+                    contour_labels,
+                    norm_min,
+                    norm_max,
+                ) = cached_data
+            else:
+                (
+                    X,
+                    Z,
+                    Y_visual,
+                    mapped_norms,
+                    raw_min,
+                    raw_max,
+                    processed_min,
+                    auto_height_scale,
+                    base_lines_3d,
+                    lines_2d,
+                    contour_labels,
+                    norm_min,
+                    norm_max,
+                ) = cached_data
+                y_proc = (Y_visual / max(auto_height_scale, 1e-8)) + processed_min
+                if self.use_log:
+                    raw_est = np.expm1(y_proc) + raw_min
+                else:
+                    raw_est = y_proc
+                raw_span = max(raw_max - raw_min, 1e-8)
+                raw_t_norm = np.clip((raw_est - raw_min) / raw_span, 0.0, 1.0).astype(np.float32)
              
             self.raw_min = raw_min
             self.raw_max = raw_max
@@ -89,20 +174,13 @@ class MathSurface:
             x = np.linspace(x_range[0], x_range[1], steps)
             z = np.linspace(y_range[0], y_range[1], steps)
             X, Z = np.meshgrid(x, z)
-            
-            try:
-                Y_raw = self.loss_function.compute_value((X, Z))
-                if not isinstance(Y_raw, np.ndarray): 
-                    raise TypeError
-            except Exception:
-                Y_raw = np.zeros((steps, steps))
-                for i in range(steps):
-                    for j in range(steps): 
-                        Y_raw[i, j] = self.loss_function.compute_value([X[i, j], Z[i, j]])
+            Y_raw = self._compute_value_array(X, Z)
                         
             self.raw_min = float(np.min(Y_raw))
             self.raw_max = float(np.max(Y_raw)) 
-            
+            raw_span = max(self.raw_max - self.raw_min, 1e-8)
+            raw_t_norm = np.clip((Y_raw - self.raw_min) / raw_span, 0.0, 1.0).astype(np.float32)
+             
             Y_processed = np.log1p(np.maximum(0, Y_raw - self.raw_min)) if self.use_log else Y_raw.copy()
             self.processed_min = float(np.min(Y_processed))
             processed_max = float(np.max(Y_processed))
@@ -111,14 +189,7 @@ class MathSurface:
             self.auto_height_scale = float(max_span / (processed_max - self.processed_min)) if processed_max > self.processed_min else 1.0
             Y_visual = (Y_processed - self.processed_min) * self.auto_height_scale
 
-            grad_norms = np.zeros((steps, steps))
-            for i in range(steps):
-                for j in range(steps):
-                    try: 
-                        g = self.loss_function.compute_gradient([X[i,j], Z[i,j]])
-                    except Exception: 
-                        g = self.loss_function.compute_gradient((X[i,j], Z[i,j]))
-                    grad_norms[i,j] = math.sqrt(g[0]**2 + g[1]**2)
+            grad_norms = self._compute_gradient_norm_grid(X, Z)
                     
             norm_min, norm_max = float(np.min(grad_norms)), float(np.max(grad_norms))
             self.min_grad_norm, self.max_grad_norm = norm_min, norm_max
@@ -145,7 +216,7 @@ class MathSurface:
             lines_2d, self.contour_labels = self._get_segments(contour_range, Y_raw, X, Z, is_2d=True)
             
             surface_cache.set_surface_data(shape_key, (
-                X, Z, Y_visual, mapped_norms, self.raw_min, self.raw_max, self.processed_min, 
+                X, Z, Y_visual, mapped_norms, raw_t_norm, self.raw_min, self.raw_max, self.processed_min, 
                 self.auto_height_scale, base_lines_3d, lines_2d, self.contour_labels, norm_min, norm_max
             ))
             
@@ -154,7 +225,7 @@ class MathSurface:
         
         vertices = np.zeros((steps * steps, 8), dtype=np.float32)
         vertices[:, 0], vertices[:, 1], vertices[:, 2] = X.ravel(), Y_visual.ravel(), Z.ravel()
-        vertices[:, 4:7] = [0.0, 1.0, 0.0]
+        vertices[:, 5] = raw_t_norm.ravel()
         self.surface_mesh = BufferObject(vertices.ravel().tolist(), indices, vertex_size=8)
         
         vertices_slope = np.copy(vertices)
@@ -296,12 +367,9 @@ class MathSurface:
     def get_sphere_transform(self, pos_2d: Any, sphere_radius: float) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]:
         """Calculates collision constraints for spheres rolling on the surface to prevent clipping."""
         x, z = float(pos_2d.x if hasattr(pos_2d, 'x') else pos_2d[0]), float(pos_2d.y if hasattr(pos_2d, 'y') else pos_2d[1])
-        try: 
-            raw_y = self.loss_function.compute_value([x, z])
-        except Exception: 
-            raw_y = self.loss_function.compute_value((x, z))
+        raw_y = float(self.loss_function.compute_value([x, z]))
             
-        y_proc = np.log1p(max(0, raw_y - self.raw_min)) if self.use_log else raw_y
+        y_proc = math.log1p(max(0.0, raw_y - self.raw_min)) if self.use_log else raw_y
         log_drv = 1.0 / (1.0 + max(0, raw_y - self.raw_min)) if self.use_log else 1.0
         
         y_base_unscaled = (y_proc - self.processed_min) * self.auto_height_scale
@@ -311,23 +379,19 @@ class MathSurface:
         math_gx, math_gz = float(grad[0]), float(grad[1])
         normal = glm.normalize(glm.vec3(-math_gx * log_drv * self.auto_height_scale * self.height_scale, 1.0, -math_gz * log_drv * self.auto_height_scale * self.height_scale))
         
-        max_safe_y = y_base_scaled + sphere_radius 
-        for r_frac in np.linspace(0.0, 1.05, 15):
-            r_off = sphere_radius * r_frac
-            y_sphere_off = math.sqrt(max(0, sphere_radius**2 - r_off**2))
-            for rad in np.linspace(0, 2*math.pi, 36, endpoint=False):
-                sm_x, sm_z = x + math.cos(rad)*r_off, z + math.sin(rad)*r_off
-                try: 
-                    s_raw_y = self.loss_function.compute_value([sm_x, sm_z])
-                except Exception: 
-                    s_raw_y = self.loss_function.compute_value((sm_x, sm_z))
-                
-                s_y_proc = np.log1p(max(0, s_raw_y - self.raw_min)) if self.use_log else s_raw_y
-                s_y_base_scaled = (s_y_proc - self.processed_min) * self.auto_height_scale * self.height_scale
-                required_center_y = s_y_base_scaled + y_sphere_off
-                
-                if required_center_y > max_safe_y: 
-                    max_safe_y = required_center_y
+        radial_offsets = sphere_radius * self._SPHERE_RADIAL_SAMPLES
+        y_sphere_offsets = np.sqrt(np.maximum(0.0, sphere_radius**2 - radial_offsets**2))
+        sample_x = x + np.outer(radial_offsets, self._SPHERE_COS)
+        sample_z = z + np.outer(radial_offsets, self._SPHERE_SIN)
+        sample_raw = self._compute_value_array(sample_x, sample_z)
+
+        if self.use_log:
+            sample_proc = np.log1p(np.maximum(0.0, sample_raw - self.raw_min))
+        else:
+            sample_proc = sample_raw
+        sample_scaled = (sample_proc - self.processed_min) * self.auto_height_scale * self.height_scale
+        required_center_y = sample_scaled + y_sphere_offsets[:, None]
+        max_safe_y = max(y_base_scaled + sphere_radius, float(np.max(required_center_y)))
 
         return (x, float(y_base_unscaled), z), (x, float(max_safe_y), z), (normal.x, normal.y, normal.z)
 
@@ -338,13 +402,7 @@ class MathSurface:
             
         path = np.array(path_list, dtype=np.float32)
         X, Z = path[:, 0], path[:, 1]
-        
-        try:
-            raw_y = self.loss_function.compute_value((X, Z))
-            if not isinstance(raw_y, np.ndarray): 
-                raise TypeError
-        except Exception:
-            raw_y = np.array([self.loss_function.compute_value([x, z]) for x, z in zip(X, Z)])
+        raw_y = self._compute_value_array(X, Z)
 
         y_proc = np.log1p(np.maximum(0, raw_y - self.raw_min)) if self.use_log else raw_y
         y_base = (y_proc - self.processed_min) * self.auto_height_scale

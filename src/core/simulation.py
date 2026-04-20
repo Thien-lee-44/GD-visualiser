@@ -9,6 +9,9 @@ from src.core.functions.registry import FUNCTION_REGISTRY
 from src.core.models import SimulationConfig, MetricData
 from src.app.events import event_bus, AppEvent
 
+_BASE_FRAME_SECONDS = 1.0 / 60.0
+_MAX_FRAME_SECONDS = 0.1
+
 class SimulationController:
     """Manages the execution loop and state of all optimizer entities."""
     
@@ -73,19 +76,25 @@ class SimulationController:
         else:
             self.sim_speed = 1.0 + ((slider_value - 50) / 50.0) * 19.0
 
-    def tick(self, surface: Any) -> bool:
+    def tick(self, surface: Any, delta_time: Optional[float] = None) -> bool:
         """Advances the simulation by one frame budget. Returns True if a redraw is needed."""
         if not self.is_running or not self.entities: 
             return False
-            
+
+        frame_seconds = _BASE_FRAME_SECONDS if delta_time is None else float(delta_time)
+        frame_seconds = max(0.0, min(frame_seconds, _MAX_FRAME_SECONDS))
+        frame_scale = frame_seconds / _BASE_FRAME_SECONDS
+        effective_speed = self.sim_speed * frame_scale
+             
         all_finished = True
         
         for ent in self.entities:
             if self.max_epochs > 0 and ent.algo.epochs >= self.max_epochs:
                 continue
-                
-            ent.update_step(self.loss_function, surface, sim_speed=self.sim_speed)
-            all_finished = False
+                 
+            ent.update_step(self.loss_function, surface, sim_speed=effective_speed)
+            if not ent.is_converged:
+                all_finished = False
         
         if all_finished and self.max_epochs > 0 and self.is_running:
             self.is_running = False

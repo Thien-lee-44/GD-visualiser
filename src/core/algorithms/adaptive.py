@@ -2,7 +2,7 @@
 Adaptive learning rate optimization algorithms.
 """
 from typing import Tuple, List, Any
-import glm
+import numpy as np
 
 from src.core.algorithms.base import Optimizer
 from src.core.algorithms.registry import register_algorithm
@@ -14,25 +14,24 @@ class AdaGrad(Optimizer):
     def __init__(self, learning_rate: float = 0.1, start_pos: List[float] = [0.0, 0.0], eps: float = 1e-8) -> None:
         super().__init__(learning_rate, start_pos)
         self.eps: float = float(eps)
-        self.G: glm.vec2 = glm.vec2(0.0, 0.0)
+        self.G: np.ndarray = np.zeros(2, dtype=np.float64)
 
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        raw_grad = loss_function.compute_gradient(self.current_pos)
-        grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        grad = self._vec2(loss_function.compute_gradient(self.current_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
         self.G = self.G + (grad * grad)
-        adjusted_lr = self.lr / (glm.sqrt(self.G) + self.eps)
+        adjusted_lr = self.lr / (np.sqrt(self.G) + self.eps)
         self.current_pos = self.current_pos - (grad * adjusted_lr)
         
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.trajectory.append(self.current_pos.copy())
         self.epochs += 1
         
-        return loss, glm.length(grad)
+        return loss, float(np.linalg.norm(grad))
 
     def reset(self, start_pos: List[float]) -> None:
         super().reset(start_pos)
-        self.G = glm.vec2(0.0, 0.0)
+        self.G = np.zeros(2, dtype=np.float64)
 
 @register_algorithm("RMSprop")
 class RMSprop(Optimizer):
@@ -42,25 +41,24 @@ class RMSprop(Optimizer):
         super().__init__(learning_rate, start_pos)
         self.decay_rate: float = float(decay_rate)
         self.eps: float = float(eps)
-        self.E_g2: glm.vec2 = glm.vec2(0.0, 0.0)
+        self.E_g2: np.ndarray = np.zeros(2, dtype=np.float64)
 
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        raw_grad = loss_function.compute_gradient(self.current_pos)
-        grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        grad = self._vec2(loss_function.compute_gradient(self.current_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
         self.E_g2 = (self.E_g2 * self.decay_rate) + ((grad * grad) * (1.0 - self.decay_rate))
-        adjusted_lr = self.lr / (glm.sqrt(self.E_g2) + self.eps)
+        adjusted_lr = self.lr / (np.sqrt(self.E_g2) + self.eps)
         self.current_pos = self.current_pos - (grad * adjusted_lr)
         
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.trajectory.append(self.current_pos.copy())
         self.epochs += 1
         
-        return loss, glm.length(grad)
+        return loss, float(np.linalg.norm(grad))
 
     def reset(self, start_pos: List[float]) -> None:
         super().reset(start_pos)
-        self.E_g2 = glm.vec2(0.0, 0.0)
+        self.E_g2 = np.zeros(2, dtype=np.float64)
 
 @register_algorithm("Adam")
 class Adam(Optimizer):
@@ -71,12 +69,11 @@ class Adam(Optimizer):
         self.beta1: float = float(beta1)
         self.beta2: float = float(beta2)
         self.eps: float = float(eps)
-        self.m: glm.vec2 = glm.vec2(0.0, 0.0)
-        self.v: glm.vec2 = glm.vec2(0.0, 0.0)
+        self.m: np.ndarray = np.zeros(2, dtype=np.float64)
+        self.v: np.ndarray = np.zeros(2, dtype=np.float64)
 
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        raw_grad = loss_function.compute_gradient(self.current_pos)
-        grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        grad = self._vec2(loss_function.compute_gradient(self.current_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
         self.epochs += 1
@@ -87,12 +84,12 @@ class Adam(Optimizer):
         m_hat = self.m / (1.0 - (self.beta1 ** self.epochs))
         v_hat = self.v / (1.0 - (self.beta2 ** self.epochs))
         
-        self.current_pos = self.current_pos - (m_hat * (self.lr / (glm.sqrt(v_hat) + self.eps)))
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.current_pos = self.current_pos - (m_hat * (self.lr / (np.sqrt(v_hat) + self.eps)))
+        self.trajectory.append(self.current_pos.copy())
         
-        return loss, glm.length(grad)
+        return loss, float(np.linalg.norm(grad))
 
     def reset(self, start_pos: List[float]) -> None:
         super().reset(start_pos)
-        self.m = glm.vec2(0.0, 0.0)
-        self.v = glm.vec2(0.0, 0.0)
+        self.m = np.zeros(2, dtype=np.float64)
+        self.v = np.zeros(2, dtype=np.float64)

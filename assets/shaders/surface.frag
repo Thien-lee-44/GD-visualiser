@@ -1,5 +1,6 @@
 #version 330 core
 in float height;
+in float raw01;
 out vec4 FragColor;
 
 uniform int is_contour;
@@ -21,13 +22,17 @@ void main() {
         return;
     }
 
-    float y_proc = processed_min;
-    if (auto_height_scale > 0.0001) {
-        y_proc = (height / auto_height_scale) + processed_min;
-    }
-    float raw_y = (use_log == 1) ? (exp(y_proc) - 1.0 + raw_min) : y_proc;
+    float t = clamp(raw01, 0.0, 1.0);
 
-    float t = clamp((raw_y - raw_min) / (raw_max - raw_min + 0.0001), 0.0, 1.0);
+    if (is_contour == 1) {
+        float y_proc = processed_min;
+        if (auto_height_scale > 0.0001) {
+            y_proc = (height / auto_height_scale) + processed_min;
+        }
+        float raw_y = (use_log == 1) ? (exp(y_proc) - 1.0 + raw_min) : y_proc;
+        t = clamp((raw_y - raw_min) / (raw_max - raw_min + 0.0001), 0.0, 1.0);
+    }
+
     vec3 low_c = vec3(0.1, 0.3, 0.8);
     vec3 mid_c = vec3(0.2, 0.8, 0.2);
     vec3 high_c = vec3(0.9, 0.2, 0.2);

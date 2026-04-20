@@ -4,7 +4,7 @@ Stochastic algorithms that simulate noisy environment gradients and batching.
 import math
 import random
 from typing import Tuple, List, Any
-import glm
+import numpy as np
 
 from src.core.algorithms.base import Optimizer
 from src.core.algorithms.registry import register_algorithm
@@ -18,18 +18,17 @@ class SimulatedSGD(Optimizer):
         self.noise_std: float = float(noise_std)
 
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        raw_grad = loss_function.compute_gradient(self.current_pos)
-        exact_grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        exact_grad = self._vec2(loss_function.compute_gradient(self.current_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
-        noise = glm.vec2(random.gauss(0, self.noise_std), random.gauss(0, self.noise_std))
+        noise = np.array([random.gauss(0.0, self.noise_std), random.gauss(0.0, self.noise_std)], dtype=np.float64)
         noisy_grad = exact_grad + noise
         
         self.current_pos = self.current_pos - (noisy_grad * self.lr)
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.trajectory.append(self.current_pos.copy())
         self.epochs += 1
         
-        return loss, glm.length(exact_grad)
+        return loss, float(np.linalg.norm(exact_grad))
 
 @register_algorithm("MiniBatchSGD")
 class MiniBatchSGD(SimulatedSGD):

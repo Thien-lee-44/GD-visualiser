@@ -107,8 +107,11 @@ class OptimizerEntity:
             dist_3d = glm.length(move_vec)
             if dist_3d > 1e-4:
                 move_dir = glm.normalize(move_vec)
-                axis = glm.normalize(glm.cross(surface_normal, move_dir))
-                angle = float(dist_3d / self.sphere_radius)
-                self.rotation_matrix = glm.rotate(glm.mat4(1.0), angle, axis) * self.rotation_matrix
+                raw_axis = glm.cross(surface_normal, move_dir)
+                axis_len = glm.length(raw_axis)
+                if axis_len > 1e-6 and self.sphere_radius > 1e-6:
+                    axis = raw_axis / axis_len
+                    angle = float(dist_3d / self.sphere_radius)
+                    self.rotation_matrix = glm.rotate(glm.mat4(1.0), angle, axis) * self.rotation_matrix
                 
         self.last_center_3d = curr_center_3d

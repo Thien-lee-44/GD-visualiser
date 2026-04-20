@@ -2,7 +2,7 @@
 Standard Gradient Descent algorithms including Momentum and Nesterov variations.
 """
 from typing import Tuple, List, Any
-import glm
+import numpy as np
 
 from src.core.algorithms.base import Optimizer
 from src.core.algorithms.registry import register_algorithm
@@ -12,16 +12,14 @@ class GradientDescent(Optimizer):
     """Vanilla Gradient Descent algorithm."""
     
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        # Cast gradient to glm.vec2 for safe math operations
-        raw_grad = loss_function.compute_gradient(self.current_pos)
-        grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        grad = self._vec2(loss_function.compute_gradient(self.current_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
         self.current_pos = self.current_pos - (grad * self.lr)
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.trajectory.append(self.current_pos.copy())
         self.epochs += 1
         
-        return loss, glm.length(grad)
+        return loss, float(np.linalg.norm(grad))
 
 @register_algorithm("MomentumGD")
 class MomentumGD(Optimizer):
@@ -30,24 +28,23 @@ class MomentumGD(Optimizer):
     def __init__(self, learning_rate: float = 0.01, start_pos: List[float] = [0.0, 0.0], momentum: float = 0.9) -> None:
         super().__init__(learning_rate, start_pos)
         self.momentum: float = float(momentum)
-        self.velocity: glm.vec2 = glm.vec2(0.0, 0.0)
+        self.velocity: np.ndarray = np.zeros(2, dtype=np.float64)
 
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        raw_grad = loss_function.compute_gradient(self.current_pos)
-        grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        grad = self._vec2(loss_function.compute_gradient(self.current_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
         self.velocity = (self.velocity * self.momentum) - (grad * self.lr)
         self.current_pos = self.current_pos + self.velocity
         
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.trajectory.append(self.current_pos.copy())
         self.epochs += 1
         
-        return loss, glm.length(grad)
+        return loss, float(np.linalg.norm(grad))
 
     def reset(self, start_pos: List[float]) -> None:
         super().reset(start_pos)
-        self.velocity = glm.vec2(0.0, 0.0)
+        self.velocity = np.zeros(2, dtype=np.float64)
 
 @register_algorithm("Nesterov")
 class Nesterov(Optimizer):
@@ -56,23 +53,21 @@ class Nesterov(Optimizer):
     def __init__(self, learning_rate: float = 0.01, start_pos: List[float] = [0.0, 0.0], momentum: float = 0.9) -> None:
         super().__init__(learning_rate, start_pos)
         self.momentum: float = float(momentum)
-        self.velocity: glm.vec2 = glm.vec2(0.0, 0.0)
+        self.velocity: np.ndarray = np.zeros(2, dtype=np.float64)
 
     def step(self, loss_function: Any) -> Tuple[float, float]:
-        # Compute gradient at the lookahead position
         lookahead_pos = self.current_pos + (self.velocity * self.momentum)
-        raw_grad = loss_function.compute_gradient(lookahead_pos)
-        grad = glm.vec2(float(raw_grad[0]), float(raw_grad[1]))
+        grad = self._vec2(loss_function.compute_gradient(lookahead_pos))
         loss = float(loss_function.compute_value(self.current_pos))
         
         self.velocity = (self.velocity * self.momentum) - (grad * self.lr)
         self.current_pos = self.current_pos + self.velocity
         
-        self.trajectory.append(glm.vec2(self.current_pos))
+        self.trajectory.append(self.current_pos.copy())
         self.epochs += 1
         
-        return loss, glm.length(grad)
+        return loss, float(np.linalg.norm(grad))
 
     def reset(self, start_pos: List[float]) -> None:
         super().reset(start_pos)
-        self.velocity = glm.vec2(0.0, 0.0)
+        self.velocity = np.zeros(2, dtype=np.float64)

@@ -2,7 +2,7 @@
 The central rendering pipeline.
 Orchestrates the drawing of surfaces, entities, bounding boxes, and handles pixel-picking.
 """
-import os
+from pathlib import Path
 import glm
 import numpy as np
 from OpenGL.GL import *
@@ -24,14 +24,14 @@ class MainRenderer:
         shader_manager.clear_cache()
         resource_manager.clear_cache()
         
-        shader_dir = settings.get("paths", "shaders", default="assets/shaders")
-        base_vert = os.path.join(shader_dir, "base.vert")
+        shader_dir = settings.get_path("paths", "shaders", default=Path("assets") / "shaders")
+        base_vert = shader_dir / "base.vert"
         
         # Load Shaders via the Cache Manager
-        self.surface_shader = shader_manager.get_shader("surface", base_vert, os.path.join(shader_dir, "surface.frag"))
-        self.entity_shader = shader_manager.get_shader("entity", base_vert, os.path.join(shader_dir, "entity.frag"))
-        self.heatmap_shader = shader_manager.get_shader("heatmap", base_vert, os.path.join(shader_dir, "heatmap.frag"))
-        self.picking_shader = shader_manager.get_shader("picking", base_vert, os.path.join(shader_dir, "picking.frag"))
+        self.surface_shader = shader_manager.get_shader("surface", str(base_vert), str(shader_dir / "surface.frag"))
+        self.entity_shader = shader_manager.get_shader("entity", str(base_vert), str(shader_dir / "entity.frag"))
+        self.heatmap_shader = shader_manager.get_shader("heatmap", str(base_vert), str(shader_dir / "heatmap.frag"))
+        self.picking_shader = shader_manager.get_shader("picking", str(base_vert), str(shader_dir / "picking.frag"))
         
         self.surface: Optional[MathSurface] = None 
         
